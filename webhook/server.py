@@ -10,10 +10,15 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Initialize FastAPI application with title for better API documentation
 app = FastAPI(title="DocuMo Webhook Server")
 
 class WebhookPayload(BaseModel):
-    """Base webhook payload model."""
+    """Base webhook payload model for GitHub events.
+    
+    This model captures the essential information from GitHub webhook events,
+    including repository details and pull request information when available.
+    """
     repository: dict
     pull_request: Optional[dict] = None
     action: Optional[str] = None
@@ -29,6 +34,7 @@ def verify_github_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 @app.post("/webhook/github")
+@app.get("/webhook/github")
 async def github_webhook(
     request: Request,
     x_github_event: str = Header(None),
