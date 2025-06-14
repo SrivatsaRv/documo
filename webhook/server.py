@@ -6,12 +6,16 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from doc_generator import DocGenerator
 
 # Load environment variables
 load_dotenv()
 
 # Initialize FastAPI application with title for better API documentation
 app = FastAPI(title="DocuMo Webhook Server")
+
+# Initialize documentation generator
+doc_generator = DocGenerator()
 
 class WebhookPayload(BaseModel):
     """Base webhook payload model for GitHub events.
@@ -59,18 +63,46 @@ async def github_webhook(
 
     # Extract relevant information
     repo_url = webhook_data.repository["html_url"]
+    repo_name = webhook_data.repository["full_name"]
     pr_number = webhook_data.pull_request["number"]
     branch = webhook_data.pull_request["head"]["ref"]
+    
+    # Get list of modified files from the PR
+    modified_files = [
+        file["filename"] 
+        for file in webhook_data.pull_request.get("files", [])
+    ]
 
-    # TODO: Trigger documentation generation
-    # This will be implemented when we create the agent runner
+    if not modified_files:
+        return JSONResponse({
+            "message": "No files modified in PR",
+            "repo": repo_url,
+            "pr": pr_number
+        })
 
-    return JSONResponse({
-        "message": "Webhook received",
-        "repo": repo_url,
-        "pr": pr_number,
-        "branch": branch
-    })
+    try:
+        # Generate documentation for modified files
+        docs = doc_generator.generate_documentation(".", modified_files)
+        
+        # Save documentation
+        doc_generator.save_documentation(docs, pr_number)
+
+        # Post to GitHub PR
+        doc_generator.post_to_github(repo_name, pr_number)
+
+        return JSONResponse({
+            "message": "Documentation generated and posted successfully",
+            "repo": repo_url,
+            "pr": pr_number,
+            "files": modified_files,
+            "docs_generated": list(docs.keys())
+        })
+    except Exception as e:
+        return JSONResponse({
+            "message": f"Error generating documentation: {str(e)}",
+            "repo": repo_url,
+            "pr": pr_number
+        }, status_code=500)
 
 @app.get("/health")
 async def health_check():
